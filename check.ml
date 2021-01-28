@@ -293,13 +293,13 @@ let check_dupcases vs =
   chk (List.sort compare vs)
 
 (* |check_stmt| -- check and annotate a statement *)
-let rec check_stmt s env alloc =
+let rec check_stmt s env alloc inloop=
   err_line := s.s_line;
   match s.s_guts with
       Skip -> ()
 
     | Seq ss ->
-        List.iter (fun s1 -> check_stmt s1 env alloc) ss
+        List.iter (fun s1 -> check_stmt s1 env alloc inloop) ss
 
     | Assign (lhs, rhs) ->
         let lt = check_expr lhs env
@@ -329,21 +329,38 @@ let rec check_stmt s env alloc =
                   sem_error "function must return a result" []
         end
 
+    | BreakStmt number ->
+        begin
+          match number with
+                Some n ->
+                  check_const n env;
+                  let t1 = check_expr n env in
+                  if not (same_type t1 integer) then
+                    sem_error "argument of break is not an integer" [];
+                  if not inloop then
+                    sem_error "break must be inside a loop"[];
+              | None ->
+                  if not inloop then
+                    sem_error "break must be inside a loop"[];
+                         
+        end
+                
+
     | IfStmt (cond, thenpt, elsept) ->
         let ct = check_expr cond env in
         if not (same_type ct boolean) then
           sem_error "test in if statement must be a boolean" []; 
-        check_stmt thenpt env alloc;
-        check_stmt elsept env alloc
+        check_stmt thenpt env alloc inloop;
+        check_stmt elsept env alloc inloop
 
     | WhileStmt (cond, body) ->
         let ct = check_expr cond env in
         if not (same_type ct boolean) then
           sem_error "type mismatch in while statement" [];
-        check_stmt body env alloc
+        check_stmt body env alloc true
 
     | RepeatStmt (body, test) ->
-        check_stmt body env alloc;
+        check_stmt body env alloc true;
         let ct = check_expr test env in
         if not (same_type ct boolean) then
           sem_error "type mismatch in repeat statement" []
@@ -356,7 +373,7 @@ let rec check_stmt s env alloc =
             || not (same_type hit integer) then
           sem_error "type mismatch in for statement" [];
         check_var var false;
-        check_stmt body env alloc;
+        check_stmt body env alloc true;
 
         (* Allocate space for hidden variable.  In the code, this will
            be used to save the upper bound.  *)
@@ -372,11 +389,11 @@ let rec check_stmt s env alloc =
           let (t1, v) = check_const lab env in
           if not (same_type t1 st) then
             sem_error "case label has wrong type" [];
-          check_stmt body env alloc; v in
+          check_stmt body env alloc inloop; v in
 
         let vs = List.map check_arm arms in
         check_dupcases vs;
-        check_stmt deflt env alloc
+        check_stmt deflt env alloc inloop
 
 
 (* TYPES AND DECLARATIONS *)
@@ -456,7 +473,8 @@ let rec check_typexpr te env =
         let env' = check_decls fields (new_block env) in
         let defs = top_block env' in
         let size = ref 0 in
-        do_alloc (upward_alloc size) defs;
+        let sorted_defs = sort_defs defs in
+        do_alloc (upward_alloc size) sorted_defs;   
         align max_align size;
         let r = { r_size = !size; r_align = max_align } in
         mk_type (RecordType defs) r
@@ -535,6 +553,17 @@ and check_heading env (Heading (x, fparams, result)) =
   let p = { p_fparams = defs; p_pcount = !pcount; p_result = rt } in
   mk_type (ProcType p) proc_rep
 
+
+
+(*|sort_defs| -- sort a sequence of defs *)
+and sort_defs ds =
+  List.sort cmp_align ds
+
+and cmp_align d1 d2 = 
+  if d1.d_type.t_rep.r_align < d2.d_type.t_rep.r_align then 1 
+  else if d1.d_type.t_rep.r_align = d2.d_type.t_rep.r_align then 0
+  else -1
+  
 (* |check_decls| -- check a sequence of declarations *)
 and check_decls ds env =
   Util.accum check_decl ds env
@@ -552,8 +581,9 @@ let rec check_block level rt env (Block (ds, ss, fsize, nregv)) =
   let pre_alloc d = defs := !defs @ [d] in
   check_bodies env' ds;
   return_type := rt;
-  check_stmt ss env' pre_alloc;
-  do_alloc (local_alloc fsize nregv) !defs;
+  check_stmt ss env' pre_alloc false;
+  let sorted_defs = sort_defs !defs in
+  do_alloc (local_alloc fsize nregv) sorted_defs;
   align max_align fsize
 
 (* |check_bodies| -- check bodies of procedure declarations *)
@@ -616,11 +646,12 @@ let init_env =
 let annotate (Prog (Block (globals, ss, fsize, nregv), glodefs)) =
   level := 0;
   let env = check_decls globals (new_block init_env) in
-  do_alloc global_alloc (top_block env);
+  let defs = top_block env in
+  do_alloc global_alloc defs;
   check_bodies env globals;
   return_type := voidtype;
   level := 1;
   let alloc = local_alloc fsize nregv in
-  check_stmt ss env alloc;
+  check_stmt ss env alloc false;
   align max_align fsize;
   glodefs := top_block env

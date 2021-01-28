@@ -54,7 +54,7 @@ and stmt_guts =
   | RepeatStmt of stmt * expr
   | ForStmt of expr * expr * expr * stmt * def option ref
   | CaseStmt of expr * (expr * stmt) list * stmt
- 
+  | BreakStmt of expr option 
 
 and expr = 
   { e_guts: expr_guts; 

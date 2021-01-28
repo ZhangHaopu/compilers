@@ -22,7 +22,8 @@ let symtable =
       ("repeat", REPEAT); ("until", UNTIL); ("for", FOR);
       ("elsif", ELSIF); ("case", CASE);
       ("and", MULOP And); ("div", MULOP Div); ("or", ADDOP Or);
-      ("not", NOT); ("mod", MULOP Mod);]
+      ("not", NOT); ("mod", MULOP Mod);
+      ("break", BREAK);]
 
 let lookup s =
   try Hashtbl.find symtable s with

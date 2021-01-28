@@ -23,6 +23,7 @@ open Tree
 %token                  PROC RECORD RETURN THEN TO TYPE
 %token                  VAR WHILE NOT POINTER NIL
 %token                  REPEAT UNTIL FOR ELSIF CASE
+%token                  BREAK
 
 %type <Tree.program>    program
 %start                  program
@@ -119,8 +120,8 @@ stmt1 :
   | FOR name ASSIGN expr TO expr DO stmts END 
                                         { let v = makeExpr (Variable $2) in
                                           ForStmt (v, $4, $6, $8, ref None) } 
-  | CASE expr OF arms else_part END     { CaseStmt ($2, $4, $5) };
-  
+  | CASE expr OF arms else_part END     { CaseStmt ($2, $4, $5) }
+  | BREAK expr_opt                      { BreakStmt $2 }; 
 
 elses :
     /* empty */                         { makeStmt (Skip, 0) }
